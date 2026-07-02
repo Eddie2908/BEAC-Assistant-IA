@@ -12,6 +12,7 @@ import argparse
 import csv
 import json
 import random
+import time
 from pathlib import Path
 from typing import Any
 
@@ -189,6 +190,7 @@ def run_evaluation(n_samples: int, output_csv: Path) -> None:
         try:
             evaluated = evaluate_sample(sample)
             results.append(evaluated)
+            time.sleep(0.5)   # laisse le CPU refroidir entre les appels LLM
         except Exception as exc:
             logger.error(f"Échec évaluation pour sample {sample.get('chunk_id')} : {exc}")
 
@@ -264,7 +266,7 @@ def run_evaluation(n_samples: int, output_csv: Path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Évaluation automatique du RAG BEAC")
-    parser.add_argument("--samples", type=int, default=50, help="Nombre de questions à générer")
+    parser.add_argument("--samples", type=int, default=20, help="Nombre de questions à générer")
     parser.add_argument("--output", type=str, default="results/eval.csv", help="Chemin du CSV de résultats")
     parser.add_argument("--seed", type=int, default=42, help="Seed pour la reproductibilité")
     args = parser.parse_args()

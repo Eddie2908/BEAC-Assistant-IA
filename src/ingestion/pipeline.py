@@ -10,6 +10,8 @@ Optimisations :
 """
 from __future__ import annotations
 
+import gc
+
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -29,8 +31,8 @@ from src.utils.metadata import extract_metadata_from_path
 _ING = CONFIG.get("ingestion", {})
 _PDF_EXT = set(_ING.get("pdf_extensions", [".pdf"]))
 _EXCEL_EXT = set(_ING.get("excel_extensions", [".xls", ".xlsx"]))
-_EMB_BATCH = int(CONFIG.get("embeddings", {}).get("batch_size", 64))
-_FILE_BATCH = int(_ING.get("batch_size", 20))
+_EMB_BATCH = int(CONFIG.get("embeddings", {}).get("batch_size", 16))
+_FILE_BATCH = int(_ING.get("batch_size", 8))
 
 
 @dataclass
@@ -101,7 +103,10 @@ def _embed_chunks(contents: list[str]) -> list[list[float]]:
     vectors: list[list[float]] = []
     for start in range(0, len(contents), _EMB_BATCH):
         batch = contents[start:start + _EMB_BATCH]
-        vectors.extend(embedder.embed_documents(batch))
+        vecs = embedder.embed_documents(batch)
+        vectors.extend(vecs)
+        del vecs   # libération immédiate des tenseurs intermédiaires
+        gc.collect()   # force le GC après chaque batch
     return vectors
 
 

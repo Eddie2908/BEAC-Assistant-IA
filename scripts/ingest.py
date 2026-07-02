@@ -14,6 +14,8 @@ from pathlib import Path
 from src.ingestion.pipeline import ingest_directory
 from src.utils.logger import logger
 
+from src.rag.llm_client import get_llm
+get_llm().unload()   # libérer ~5 Go pendant l'ingestion OCR
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Ingestion BEAC RAG")

@@ -17,6 +17,9 @@ from pathlib import Path
 
 import fitz  # PyMuPDF
 import pytesseract
+
+# Désactive les logs MuPDF pour éviter l'affichage des erreurs de PDF corrompus
+fitz.TOOLS.mupdf_warnings(False)
 from pdf2image import convert_from_path, pdfinfo_from_path
 from PIL import Image
 
@@ -26,6 +29,9 @@ from src.utils.logger import logger
 _ING = CONFIG.get("ingestion", {})
 _OCR_THRESHOLD = int(_ING.get("ocr_text_threshold", 100))
 _OCR_DPI = int(_ING.get("ocr_dpi", 300))
+
+_OCR_MAX_PAGES_PARALLEL = int(_ING.get("ocr_workers", 4))  # déjà géré
+
 _OCR_WORKERS = int(_ING.get("ocr_workers", 0))
 if _OCR_WORKERS <= 0:
     _OCR_WORKERS = max(1, (os.cpu_count() or 4) // 2)
@@ -56,12 +62,19 @@ class PdfExtractionResult:
 
 def _extract_native(path: Path) -> tuple[str, int]:
     """Extraction texte native via PyMuPDF."""
-    texts: list[str] = []
-    with fitz.open(path) as doc:
-        page_count = doc.page_count
-        for page in doc:
-            texts.append(page.get_text("text"))
-    return "\n".join(texts).strip(), page_count
+    try:
+        texts: list[str] = []
+        with fitz.open(path) as doc:
+            page_count = doc.page_count
+            for page in doc:
+                text = page.get_text("text")
+                # Nettoyage des caracteres de controle invalides pour PostgreSQL
+                text = text.replace("\x00", " ").replace("\x07", " ")
+                texts.append(text)
+        return "\n".join(texts).strip(), page_count
+    except Exception as exc:
+        logger.error(f"PDF corrompu ou illisible ({path.name}): {exc}")
+        return "", 0
 
 
 def _ocr_page(image: Image.Image) -> str:
@@ -84,7 +97,10 @@ def _ocr_single_page(args: tuple[str, int, str, int, str]) -> str:
     texts: list[str] = []
     for image in images:
         try:
-            texts.append(pytesseract.image_to_string(image, lang=ocr_langs))
+            text = pytesseract.image_to_string(image, lang=ocr_langs)
+            # Nettoyage des caracteres de controle invalides pour PostgreSQL
+            text = text.replace("\x00", " ").replace("\x07", " ")
+            texts.append(text)
         except Exception:
             pass
         finally:
@@ -173,6 +189,11 @@ def extract_pdf_text(path: str | Path) -> PdfExtractionResult:
     """Extrait le texte d'un PDF (natif -> OCR -> images descriptives)."""
     path = Path(path)
     native_text, page_count = _extract_native(path)
+
+    # PDF corrompu : page_count = 0
+    if page_count == 0:
+        logger.warning(f"PDF ignore (corrompu) : {path.name}")
+        return PdfExtractionResult(text="", method="error", page_count=0)
 
     # Heuristique : assez de texte natif -> on garde
     if len(native_text) >= _OCR_THRESHOLD:

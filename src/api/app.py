@@ -29,6 +29,7 @@ from src.database.schema import Chunk, Document, Statistic
 from src.rag.engine import answer_question, stream_answer
 from src.rag.llm_client import get_llm
 from src.utils.logger import logger
+from src.rag.cache import get_cache
 
 
 @asynccontextmanager
@@ -58,6 +59,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.post("/cache/clear")
+def clear_cache():
+    get_cache().invalidate()
+    return {"status": "cache vidé"}
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -91,18 +98,34 @@ def query(req: QueryRequest) -> QueryResponse:
     )
 
 
+# src/api/app.py — améliorer query_stream
 @app.post("/query/stream")
 def query_stream(req: QueryRequest) -> StreamingResponse:
     def token_generator():
         try:
-            for token in stream_answer(req.question):
+            # 1. Envoyer d'abord les métadonnées en JSON (avant les tokens)
+            context, vector_items, sql_used, qtype = _build_context(req.question)
+            meta = {
+                "type": "meta",
+                "query_type": qtype,
+                "sources": [
+                    {"source": i.source, "year": i.year, "score": round(i.score, 3)}
+                    for i in vector_items
+                ],
+                "sql": sql_used,
+            }
+            yield json.dumps(meta, ensure_ascii=False) + "\n"
+
+            # 2. Streamer les tokens ensuite
+            prompt = build_rag_prompt(req.question, context)
+            for token in get_llm().stream(prompt, system=SYSTEM_PROMPT):
                 yield token
+
         except Exception as exc:
-            logger.exception("Erreur lors du streaming")
+            logger.exception("Erreur streaming")
             yield f"\n[Erreur: {exc}]"
 
     return StreamingResponse(token_generator(), media_type="text/plain; charset=utf-8")
-
 
 @app.get("/metadata")
 def metadata() -> dict:

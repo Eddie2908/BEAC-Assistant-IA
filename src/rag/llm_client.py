@@ -21,6 +21,7 @@ _TEMPERATURE = float(_LLM.get("temperature", 0.1))
 _NUM_CTX = int(_LLM.get("num_ctx", 4096))
 _MAX_TOKENS = int(_LLM.get("max_tokens", 1024))
 _KEEP_ALIVE = _LLM.get("keep_alive", "1h")
+_FAST_MODEL = _LLM.get("fast_model", None)
 
 # Nombre de tentatives en cas d'erreur transitoire (connexion Ollama)
 _MAX_RETRIES = 2
@@ -42,17 +43,24 @@ class LLMClient:
     # ------------------------------------------------------------------
 
     def warmup(self) -> None:
-        """Pré-charge le modèle en RAM (à appeler au démarrage de l'app)."""
         try:
             self.client.generate(
                 model=self.model,
-                prompt="ok",
-                keep_alive=_KEEP_ALIVE,
+                prompt="Bonjour",
+                keep_alive=_KEEP_ALIVE,   # "30m" — maintient le modèle chargé
                 options={"num_predict": 1},
             )
-            logger.info("Modèle LLM pré-chargé : %s", self.model)
+            # Préchauffer aussi le fast_model s'il est configuré
+            if _FAST_MODEL:
+                self.client.generate(
+                    model=_FAST_MODEL,
+                    prompt="Bonjour",
+                    keep_alive=_KEEP_ALIVE,
+                    options={"num_predict": 1},
+                )
+            logger.info("LLM(s) préchauffé(s) : %s", self.model)
         except Exception as exc:
-            logger.error("Échec du warmup LLM : %s", exc)
+            logger.error("Échec warmup : %s", exc)
 
     # ------------------------------------------------------------------
     # Helpers internes
@@ -93,11 +101,12 @@ class LLMClient:
     # API publique
     # ------------------------------------------------------------------
 
-    def generate(self, prompt: str, system: str | None = None) -> str:
-        """Génère une réponse complète (bloquant)."""
+    def generate(self, prompt: str, system: str | None = None,
+                 fast: bool = False) -> str:
+        model = (_FAST_MODEL if fast and _FAST_MODEL else self.model)
         messages = self._build_messages(prompt, system)
         response = self._chat_with_retry(
-            model=self.model,
+            model=model,
             messages=messages,
             options=self._options,
             keep_alive=_KEEP_ALIVE,
@@ -124,6 +133,19 @@ class LLMClient:
         except Exception as exc:
             logger.error("Erreur inattendue en streaming : %s", exc)
             raise
+    
+    def unload(self) -> None:
+        """Décharge le modèle de la RAM (utile pendant l'ingestion longue)."""
+        try:
+            self.client.generate(
+                model=self.model,
+                prompt="",
+                keep_alive=0,   # 0 = décharge immédiate
+                options={"num_predict": 0},
+            )
+            logger.info("LLM déchargé de la RAM.")
+        except Exception as exc:
+            logger.warning(f"Échec déchargement LLM : {exc}")
 
 
 @lru_cache

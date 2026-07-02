@@ -15,13 +15,13 @@ services:
     command:
       - "postgres"
       - "-c"
-      - "shared_buffers=2GB"
+      - "shared_buffers=1GB"
       - "-c"
-      - "effective_cache_size=6GB"
+      - "effective_cache_size=3GB"
       - "-c"
-      - "work_mem=128MB"
+      - "work_mem=64MB"
       - "-c"
-      - "maintenance_work_mem=1GB"
+      - "maintenance_work_mem=512MB"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-beac} -d ${POSTGRES_DB:-beac_rag}"]
       interval: 10s

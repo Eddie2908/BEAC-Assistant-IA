@@ -15,14 +15,14 @@ ingestion:
   # OCR : seuil de caracteres natifs en-dessous duquel on bascule en OCR
   ocr_text_threshold: 100
   ocr_dpi: 200           # 200 DPI suffit et 2x plus rapide
-  ocr_workers: 0         # 0 = auto (cpu_count // 2). Parallelise l'OCR page par page.
+  ocr_workers: 4         # 0 = auto (cpu_count // 2). Parallelise l'OCR page par page.
   image_extract_dir: "data/extracted_images"  # ou null pour desactiver
   # Nombre de fichiers traites par lot (memoire)
-  batch_size: 20
+  batch_size: 10
 
 # ---- Chunking ----
 chunking:
-  chunk_size: 500       # tokens approx par chunk (moins de chunks)
+  chunk_size: 400       # tokens approx par chunk (moins de chunks)
   chunk_overlap: 90
   min_chunk_chars: 50    # ignore les chunks trop courts
 
@@ -31,7 +31,7 @@ embeddings:
   model: "BAAI/bge-m3"
   device: "cpu"
   dimension: 1024        # dimension de bge-m3
-  batch_size: 64         # batch plus gros = meilleure saturation CPU
+  batch_size: 16         # batch plus gros = meilleure saturation CPU
   normalize: true
 
 # ---- Vector store (pgvector) ----
@@ -44,18 +44,23 @@ vector_store:
 
 # ---- Retrieval ----
 retrieval:
-  top_k: 10              # chunks vectoriels retournes
+  top_k: 8              # chunks vectoriels retournes
   sql_max_rows: 50       # lignes max d'une requete SQL stats
-  min_similarity: 0.3    # seuil de pertinence
+  min_similarity: 0.45    # seuil de pertinence
 
 # ---- LLM ----
 llm:
   provider: "ollama"
-  model: "llama3.1:8b-instruct-q4_K_M"
+  model: "llama3.1:8b-instruct-q4_K_M"   # modèle principal
+  fast_model: "qwen2.5:3b-instruct-q4_K_M"  # modèle rapide pour questions simples
   temperature: 0.1
   num_ctx: 4096
   max_tokens: 1024
   keep_alive: "1h"       # garde le modele en RAM
+
+cache:
+  max_size: 100
+  ttl_seconds: 3600   # 1h — adapter selon la fraîcheur des données BEAC
 
 # ---- Query router ----
 router:

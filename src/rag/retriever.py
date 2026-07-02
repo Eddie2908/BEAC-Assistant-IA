@@ -12,6 +12,8 @@ from src.indexing.embeddings import get_embedder
 _RET = CONFIG.get("retrieval", {})
 _TOP_K = int(_RET.get("top_k", 6))
 _MIN_SIM = float(_RET.get("min_similarity", 0.3))
+_CONFIDENT_THRESHOLD = 0.55
+
 
 
 @dataclass
@@ -47,16 +49,12 @@ def retrieve_context(
         filters=filters,
         min_similarity=_MIN_SIM,
     )
+    
+        
     if not chunks:
-        # Repli sans filtre si trop restrictif
-        if filters:
-            chunks = similarity_search(
-                query_embedding=query_vec,
-                top_k=top_k or _TOP_K,
-                filters=None,
-                min_similarity=_MIN_SIM,
-            )
-    if not chunks:
+        return []
+
+    if max(c.score for c in chunks) < _CONFIDENT_THRESHOLD:
         return []
 
     docs = _document_info([c.document_id for c in chunks])

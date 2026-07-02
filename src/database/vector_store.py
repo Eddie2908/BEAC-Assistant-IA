@@ -95,10 +95,12 @@ def insert_chunks(
 ) -> int:
     """Insere un lot de chunks pour un document (transaction dediee)."""
     with session_scope() as session:
-        objs = build_chunk_objects(
-            document_id, contents, embeddings, token_counts, metadatas
-        )
-        session.add_all(objs)
+        session.execute(text("SET hnsw.ef_search = 40"))   # défaut=40, peut descendre à 20
+        for row in session.execute(sql, params):
+            objs = build_chunk_objects(
+                document_id, contents, embeddings, token_counts, metadatas
+            )
+            session.add_all(objs)
     return len(objs)
 
 
